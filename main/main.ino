@@ -7,7 +7,7 @@ const char* password = "12345678";
 
 const char* firebaseHost = "https://klimatologiot-default-rtdb.asia-southeast1.firebasedatabase.app/";
 
-const int pinHallEffect = 27;
+const int pinHallEffect = 32;
 
 volatile int pulseCount = 0;
 
