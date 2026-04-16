@@ -37,7 +37,7 @@ void sendRealtime(FirebaseData &fbdo, float speed) {
 void sendHistory(FirebaseData &fbdo, float avgSpeed) {
   FirebaseJson json;
   json.set("speed", avgSpeed);
-  json.set("timestamp", (int)time(NULL));
+  json.set("timesTamp", (int)time(NULL));
 
    if (Firebase.RTDB.pushJSON(&fbdo, "/anemometer/history", &json)) {
     Serial.println("Firebase History: BERHASIL TERKIRIM");
