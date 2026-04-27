@@ -18,3 +18,4 @@ const float K_FAKTOR = 1.0;  // konstanta kalibrasi (belum kalibrasi lapangan)
 
 // --- Interval ---
 const unsigned long INTERVAL_REALTIME = 1000; // 1 detik (ms)
+const unsigned long INTERVAL_HISTORY  = 600000; // 10 menit
