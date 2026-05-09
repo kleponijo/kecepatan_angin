@@ -5,6 +5,7 @@
 #include "cfg_config.h"
 #include "wifi_manager_updated.h"
 #include "fb_firebase_helper.h"
+#include "ota_github.h"
 
 FirebaseData   fbdo;
 FirebaseAuth   fbAuth;
@@ -36,6 +37,7 @@ void setup() {
 
   if (wifiIsConnected()) {
     setupFirebase(fbdo, fbAuth, fbConfig);
+    checkAndUpdateOTA(); 
   } else {
     Serial.println("[Main] Mode AP aktif — Firebase dilewati.");
     Serial.printf( "[Main] Sambungkan HP ke hotspot \"%s\"\n", AP_SSID);
@@ -48,6 +50,12 @@ void setup() {
 
 void loop() {
   wifiManagerLoop();
+
+   static unsigned long lastOtaCheck = 0;
+  if (wifiIsConnected() && millis() - lastOtaCheck >= OTA_CHECK_INTERVAL) {
+    lastOtaCheck = millis();
+    checkAndUpdateOTA();
+  }
 
   if (!wifiIsConnected()) return;
 
