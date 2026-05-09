@@ -46,6 +46,7 @@ void setup() {
 
   attachInterrupt(digitalPinToInterrupt(PIN_HALL), hitungPulsa, FALLING);
   Serial.println("[Main] Setup selesai. Sistem aktif.\n");
+  Serial.println("[Main] Firmware v1.0.1 — OTA test berhasil!");
 }
 
 void loop() {
