@@ -395,15 +395,32 @@ void wifiManagerLoop() {
     }
   }
   if (!_apModeActive && WiFi.status() != WL_CONNECTED) {
-    Serial.println("[WiFiMgr] WiFi putus! Reconnecting...");
-    String ssid, pass;
-    if (_loadCredentials(ssid, pass)) {
-      if (_tryConnect(ssid, pass)) {
+    static unsigned long _lastReconnectMs  = 0;
+    static int           _reconnectFails   = 0;
+    const  unsigned long RECONNECT_COOLDOWN = 30000UL;
+    const  int           MAX_RECONNECT_FAIL = 10;
+
+    if (millis() - _lastReconnectMs >= RECONNECT_COOLDOWN) {
+      _lastReconnectMs = millis();
+      Serial.printf("[WiFiMgr] WiFi putus! Reconnect attempt %d/%d\n",
+                    _reconnectFails + 1, MAX_RECONNECT_FAIL);
+
+      String ssid, pass;
+      if (_loadCredentials(ssid, pass) && _tryConnect(ssid, pass)) {
         _beepSuccess();
+        _reconnectFails = 0;
         Serial.println("[WiFiMgr] Reconnect OK! IP: " + WiFi.localIP().toString());
       } else {
-        Serial.println("[WiFiMgr] Reconnect gagal.");
+        _reconnectFails++;
         _beepError();
+        Serial.printf("[WiFiMgr] Reconnect gagal (%d/%d)\n",
+                      _reconnectFails, MAX_RECONNECT_FAIL);
+
+        if (_reconnectFails >= MAX_RECONNECT_FAIL) {
+          Serial.println("[WiFiMgr] Terlalu banyak gagal → AUTO RESTART!");
+          delay(500);
+          ESP.restart(); // setelah 5 menit gagal terus, restart bersih
+        }
       }
     }
   }
