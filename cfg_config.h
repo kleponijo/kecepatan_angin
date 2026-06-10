@@ -37,10 +37,10 @@ const char* DEVICE_ID = "esp_lapangan"; // ← ganti ke "esp_lapangan" untuk ESP
 // --- WiFi Manager Settings ---
 const char*          AP_SSID        = "Anemometer-Setup"; // nama hotspot captive portal
 const char*          AP_PASSWORD    = "";                  // kosong = open AP
-const int            WIFI_MAX_RETRY = 10;                  // retry sebelum masuk AP mode
-const unsigned long  WIFI_RETRY_DELAY = 500;               // jeda antar retry (ms)
+const int            WIFI_MAX_RETRY = 40;                  // retry sebelum masuk AP mode
+const unsigned long  WIFI_RETRY_DELAY = 1500;               // jeda antar retry (ms)
 
-const char* FIRMWARE_VERSION   = "v1.0.5";         // ← ganti tiap mau update
+const char* FIRMWARE_VERSION   = "v1.0.7";         // ← ganti tiap mau update
 
 const char* GITHUB_USER        = "kleponijo";   // ← isi username GitHub kamu
 const char* GITHUB_REPO        = "kecepatan_angin";  // ← isi nama repo GitHub kamu

@@ -73,6 +73,18 @@ void loop() {
   static unsigned long lastCmdCheck = 0;
   const  unsigned long CMD_CHECK_INTERVAL = 5000UL; // cek tiap 5 detik
 
+if (wifiJustReconnected() && wifiIsConnected()) {
+    Serial.println("[Main] WiFi reconnect dari AP mode → reinit Firebase...");
+    setupFirebase(fbdo, fbAuth, fbConfig);
+    gSettings = fetchSettings(fbdo);
+    checkAndUpdateOTA(fbdo);
+    lastOtaCheck     = millis();
+    lastSettingsSync = millis();
+    sendLog(fbdo, "WiFi reconnect, Firebase reinit OK | FW=" + String(FIRMWARE_VERSION));
+    return;
+  }
+
+
   if (wifiIsConnected() && millis() - lastOtaCheck >= OTA_CHECK_INTERVAL) {
     lastOtaCheck = millis();
     checkAndUpdateOTA(fbdo);
@@ -124,6 +136,7 @@ void loop() {
   // configTime(7*3600) → localtime() sudah WIB, jadi 07:00/08:00/dst
   {
   time_t    nowT = time(NULL);
+  if (nowT >= 100000) {
   struct tm* tNow = localtime(&nowT);
 
   if (tNow->tm_hour != lastSentHour && lastSentHour != -1) {
@@ -141,5 +154,6 @@ void loop() {
         }
       }
   lastSentHour = tNow->tm_hour; // update selalu
+  }
   }
 }

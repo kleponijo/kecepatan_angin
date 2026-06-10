@@ -30,6 +30,8 @@ static Preferences  _prefs;
 static WebServer    _server(80);
 static DNSServer    _dns;
 static bool         _apModeActive = false;
+static bool _justExitedApMode = false;
+static bool _justReconnectedSTA  = false;
 static String       _serialBuffer = "";
 
 // ── Buzzer helpers ────────────────────────────────────────────────
@@ -409,6 +411,7 @@ void wifiManagerLoop() {
       if (_loadCredentials(ssid, pass) && _tryConnect(ssid, pass)) {
         _beepSuccess();
         _reconnectFails = 0;
+        _justReconnectedSTA = true;
         Serial.println("[WiFiMgr] Reconnect OK! IP: " + WiFi.localIP().toString());
       } else {
         _reconnectFails++;
@@ -424,6 +427,55 @@ void wifiManagerLoop() {
       }
     }
   }
+
+  // ── Jika AP mode aktif, coba reconnect ke WiFi tersimpan tiap 2 menit ──
+  if (_apModeActive) {
+    static unsigned long _lastApRetry = 0;
+    static int           _apRetryCount = 0;
+    const unsigned long  AP_RETRY_INTERVAL = 120000UL; // 2 menit
+    const int            AP_MAX_RETRY = 5; // 5x gagal = ~10 menit, lalu restart
+
+    if (millis() - _lastApRetry >= AP_RETRY_INTERVAL) {
+      _lastApRetry = millis();
+
+      String ssid, pass;
+      if (_loadCredentials(ssid, pass)) {
+        Serial.printf("[WiFiMgr] AP mode: coba reconnect ke \"%s\" (%d/%d)\n",
+                      ssid.c_str(), _apRetryCount + 1, AP_MAX_RETRY);
+
+        _server.stop();
+        _dns.stop();
+
+        if (_tryConnect(ssid, pass)) {
+          _apModeActive = false;
+          _apRetryCount = 0;
+          _justExitedApMode = true;
+          _beepSuccess();
+          Serial.println("[WiFiMgr] Berhasil keluar AP mode! IP: " + WiFi.localIP().toString());
+        } else {
+          _apRetryCount++;
+          Serial.printf("[WiFiMgr] Reconnect gagal, kembali ke AP mode.\n");
+          // Restart captive portal
+          _startCaptivePortal();
+
+          if (_apRetryCount >= AP_MAX_RETRY) {
+            Serial.println("[WiFiMgr] AP retry habis → AUTO RESTART!");
+            delay(500);
+            ESP.restart();
+          }
+        }
+      }
+    }
+  }
+}
+
+bool wifiJustReconnected() {
+  if (_justExitedApMode || _justReconnectedSTA ) {
+    _justExitedApMode = false;
+    _justReconnectedSTA = false;
+    return true;
+  }
+  return false;
 }
 
 bool wifiIsConnected() {
