@@ -1,9 +1,26 @@
 #pragma once
 
 // ═══════════════════════════════════════════════════════════════
-//  fb_firebase_helper.h  —  Firebase RTDB: Setup, Realtime, History
+//  fb_firebase_helper.h  —  Firebase RTDB: Setup, Realtime, Average, History
 //
-//  Perbaikan:
+//  Tiga jalur pengiriman data (independent):
+//  ┌─────────────┬────────────────────────────────┬───────────┐
+//  │ Fungsi      │ Path Firebase                  │ Mode      │
+//  ├─────────────┼────────────────────────────────┼───────────┤
+//  │ sendRealtime│ /…/realtime                    │ update    │
+//  │ sendAverage │ /…/average                     │ update    │
+//  │ sendHistory │ /…/history                     │ push      │
+//  └─────────────┴────────────────────────────────┴───────────┘
+//
+//  Kalkulasi: windweg_km = pulseCount / PULSE_PER_KM (= 18)
+//
+//  Perbaikan v2:
+//  - Tambah intervalAverage ke SensorSettings
+//  - Fix sendRealtime: pakai parameter windwegKm & pulseCount
+//    (sebelumnya salah pakai 'speed' & 'pulseRealtime' yang tidak ada)
+//  - Tambah sendAverage (baru)
+//  - Update sendHistory: pakai total/avg/max windweg berbasis pulse
+//  - Tambah sanity check intervalAverage vs intervalHistory
 //  - Auto token refresh saat token expired/revoked
 //  - Auto-reboot ESP jika gagal terus > MAX_FAIL_BEFORE_REBOOT
 // ═══════════════════════════════════════════════════════════════
@@ -21,17 +38,17 @@ static int           _consecutiveFail    = 0;
 static unsigned long _lastReinitAttempt  = 0;
 const  unsigned long REINIT_COOLDOWN     = 30000UL; // coba reinit tiap 30 detik
 
-// ── Struct settings (nilai dari Firebase atau default) ────────
+// ════════════════════════════════════════════════════════════════
+//  SensorSettings — nilai dari Firebase atau default cfg_config.h
+// ════════════════════════════════════════════════════════════════
 struct SensorSettings {
-  float         kFaktor          = DEFAULT_K_FAKTOR;
-  float         radiusM          = RADIUS_M; // Baca dari FireBase, fallback ke cfg_config.h
   unsigned long intervalRealtime = DEFAULT_INTERVAL_REALTIME;
+  unsigned long intervalAverage  = DEFAULT_INTERVAL_AVERAGE; // ← interval rata-rata (baru)
   unsigned long intervalHistory  = DEFAULT_INTERVAL_HISTORY;
   int magnetCount = DEFAULT_MAGNET_COUNT;
 };
 
 // ── Device path prefix ────────────────────────────────────────
-// Semua path di bawah /anemometer/{DEVICE_ID}/
 static String _basePath() {
   return String("/anemometer/") + DEVICE_ID;
 }
@@ -125,43 +142,20 @@ static void _tryReinitFirebase(FirebaseConfig &config) {
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  fetchSettings — baca k_faktor & interval dari Firebase
+// ════════════════════════════════════════════════════════════════
+//  fetchSettings — baca settings dari Firebase
 //
 //  Path Firebase (set dari Flutter app):
-//    /anemometer/settings/k_faktor             (float/double)
-//    /anemometer/settings/interval_realtime_ms (int, min 1000)
-//    /anemometer/settings/interval_history_ms  (int, min 60000)
+//    /anemometer/settings/interval_realtime_ms  (int, min 1000 ms)
+//    /anemometer/settings/interval_average_ms   (int, min 10000 ms)
+//    /anemometer/settings/interval_history_ms   (int, min 60000 ms)
+//    /anemometer/settings/magnet_count          (int, 1–4)
 //
 //  Jika node belum ada atau gagal baca → pakai nilai default
 //  dari cfg_config.h (tidak crash).
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
 SensorSettings fetchSettings(FirebaseData &fbdo) {
   SensorSettings s; // mulai dari default
-
-  // --- k_faktor ---
-  if (Firebase.RTDB.getFloat(&fbdo, "/anemometer/settings/k_faktor")) {
-    float val = fbdo.floatData();
-    if (val > 0.0f) {
-      s.kFaktor = val;
-      Serial.printf("[Settings] k_faktor = %.4f\n", s.kFaktor);
-    }
-  } else {
-    Serial.printf("[Settings] k_faktor gagal dibaca (%s), pakai default %.1f\n",
-                  fbdo.errorReason().c_str(), s.kFaktor);
-  }
-
-  // --- radius_m ---
-  if (Firebase.RTDB.getFloat(&fbdo, "/anemometer/settings/radius_m")) {
-    float val = fbdo.floatData();
-    if (val > 0.0f && val < 1.0f) {  // sanity check: 0–1 meter masuk akal
-      s.radiusM = val;
-      Serial.printf("[Settings] radius_m = %.4f m\n", s.radiusM);
-    }
-  } else {
-    Serial.printf("[Settings] radius_m gagal dibaca, pakai default %.4f m\n",
-                  s.radiusM);
-  }
 
   // --- interval_realtime_ms ---
   if (Firebase.RTDB.getInt(&fbdo, "/anemometer/settings/interval_realtime_ms")) {
@@ -174,6 +168,19 @@ SensorSettings fetchSettings(FirebaseData &fbdo) {
     Serial.printf("[Settings] interval_realtime gagal dibaca, pakai default %lu ms\n",
                   s.intervalRealtime);
   }
+
+    // --- interval_average_ms (baru) ---
+  if (Firebase.RTDB.getInt(&fbdo, "/anemometer/settings/interval_average_ms")) {
+    long val = fbdo.intData();
+    if (val >= 10000) { // minimal 10 detik
+      s.intervalAverage = (unsigned long)val;
+      Serial.printf("[Settings] interval_average = %lu ms\n", s.intervalAverage);
+    }
+  } else {
+    Serial.printf("[Settings] interval_average gagal dibaca, pakai default %lu ms\n",
+                  s.intervalAverage);
+  }
+
 
   // --- interval_history_ms ---
   if (Firebase.RTDB.getInt(&fbdo, "/anemometer/settings/interval_history_ms")) {
@@ -199,19 +206,24 @@ SensorSettings fetchSettings(FirebaseData &fbdo) {
                   s.magnetCount);
   }
 
+  // --- Sanity check ---
+  // intervalAverage tidak boleh lebih besar dari intervalHistory,
+  // karena rata-rata harus bisa terkumpul sebelum history dikirim.
+  if (s.intervalAverage > s.intervalHistory) {
+    Serial.printf("[Settings] PERINGATAN: interval_average (%lu ms) > interval_history (%lu ms). "
+                  "interval_average disesuaikan.\n",
+                  s.intervalAverage, s.intervalHistory);
+    s.intervalAverage = s.intervalHistory;
+  }
 
   return s;
 }
 
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
 //  sendLog — push satu baris log ke Firebase
 //
 //  Path: /anemometer/{DEVICE_ID}/logs/{pushKey}
-//    {msg: "...", timestamp: unix}
-//
-//  Dipakai untuk boot, OTA result, error penting.
-//  Gagal kirim → hanya Serial, tidak trigger alarm/reboot.
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
 void sendLog(FirebaseData &fbdo, const String &msg) {
   String path = _basePath() + "/logs";
 
@@ -226,28 +238,36 @@ void sendLog(FirebaseData &fbdo, const String &msg) {
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  sendRealtime — update node realtime per interval
+// ════════════════════════════════════════════════════════════════
+//  sendRealtime — update node realtime per intervalRealtime
 //
-//  Path: /anemometer/{DEVICE_ID}/realtime
-//    {speed_ms, speed_kmh, sample_count, k_faktor, timestamp}
-// ══════════════════════════════════════════════════════════════
+//  Path: /anemometer/{DEVICE_ID}/realtime  (updateNode / overwrite)
+//  Fields:
+//    windweg_km    → jarak angin selama interval ini (pulseCount / 18)
+//    pulse_count   → jumlah pulsa selama interval ini
+//    pulses_per_km → konstanta = 18
+//    interval_ms   → durasi interval realtime
+//    timestamp     → unix time WIB
+//
+//  FIX: sebelumnya pakai variabel 'speed' & 'pulseRealtime' yang
+//       tidak ada di scope fungsi → sekarang pakai parameter windwegKm
+//       & pulseCount yang dikirim dari loop().
+// ════════════════════════════════════════════════════════════════
 void sendRealtime(FirebaseData &fbdo,
-                  float speedMS,
-                  int   sampleCount,
+                  float windwegKm,
+                  int   pulseCount,
                   const SensorSettings &settings,
                   FirebaseConfig &config) {
 
   static int ok = 0, fail = 0;
-
   String path = _basePath() + "/realtime";
 
   FirebaseJson json;
-  json.set("speed_ms",     speedMS);
-  json.set("speed_kmh",    speedMS * 3.6f);
-  json.set("sample_count", sampleCount);
-  json.set("k_faktor",     settings.kFaktor);
-  json.set("timestamp",    (int)time(NULL));
+  json.set("windweg_km",    windwegKm);
+  json.set("pulse_count",   pulseCount);
+  json.set("pulses_per_km", PULSE_PER_KM);
+  json.set("interval_ms",   (int)settings.intervalRealtime);
+  json.set("timestamp",     (int)time(NULL));
 
   if (Firebase.RTDB.updateNode(&fbdo, path, &json)) {
     ok++;
@@ -278,16 +298,79 @@ void sendRealtime(FirebaseData &fbdo,
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  sendHistory — push rata-rata per interval history
+// ════════════════════════════════════════════════════════════════
+//  sendAverage — update node rata-rata per intervalAverage (default 1 menit)
+//
+//  Path: /anemometer/{DEVICE_ID}/average  (updateNode / overwrite)
+//  Fields:
+//    windweg_km    → jarak angin selama interval rata-rata ini
+//    pulse_count   → jumlah pulsa selama interval rata-rata ini
+//    sample_number → urutan sample sejak history terakhir (1, 2, 3, …)
+//    pulses_per_km → konstanta = 18
+//    interval_ms   → durasi interval rata-rata
+//    timestamp     → unix time WIB
+//
+//  Node /average selalu ditimpa (bukan push), menampilkan nilai
+//  rata-rata terkini. Untuk rekap per-periode, lihat /history.
+// ════════════════════════════════════════════════════════════════
+
+void sendAverage(FirebaseData &fbdo,
+                 float windwegKm,
+                 int   pulseCount,
+                 int   sampleNumber,
+                 const SensorSettings &settings,
+                 FirebaseConfig &config) {
+
+  static int ok = 0, fail = 0;
+  String path = _basePath() + "/average";
+
+  FirebaseJson json;
+  json.set("windweg_km",    windwegKm);
+  json.set("pulse_count",   pulseCount);
+  json.set("sample_number", sampleNumber);
+  json.set("pulses_per_km", PULSE_PER_KM);
+  json.set("interval_ms",   (int)settings.intervalAverage);
+  json.set("timestamp",     (int)time(NULL));
+
+  if (Firebase.RTDB.updateNode(&fbdo, path, &json)) {
+    ok++;
+    Serial.printf("[Firebase] Average OK #%d (%.4f km) (%d ok / %d fail)\n",
+                  sampleNumber, windwegKm, ok, fail);
+  } else {
+    fail++;
+    String reason = fbdo.errorReason();
+    Serial.printf("[Firebase] Average GAGAL (%d ok / %d fail) — %s\n",
+                  ok, fail, reason.c_str());
+
+    if (reason.indexOf("token")     >= 0 ||
+        reason.indexOf("expired")   >= 0 ||
+        reason.indexOf("revoked")   >= 0 ||
+        reason.indexOf("not ready") >= 0) {
+      _tryReinitFirebase(config);
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  sendHistory — push rekap per intervalHistory (default 1 jam)
 //
 //  Path: /anemometer/{DEVICE_ID}/history/{pushKey}
-//    {avg_ms, avg_kmh, max_ms, sample_count, k_faktor,
-//     interval_ms, timestamp}
-// ══════════════════════════════════════════════════════════════
+//  Fields:
+//    total_windweg_km  → total jarak angin periode ini (pulseHistory / 18)
+//    avg_windweg_km    → rata-rata per avg-interval (totalAvg / sampleCount)
+//    max_windweg_km    → nilai avg-interval tertinggi periode ini
+//    total_pulse       → total pulsa mentah periode ini
+//    sample_count      → berapa kali avg-interval terjadi
+//    pulses_per_km     → konstanta = 18
+//    interval_avg_ms   → durasi interval rata-rata
+//    interval_hist_ms  → durasi interval history
+//    timestamp         → unix time WIB
+// ════════════════════════════════════════════════════════════════
 void sendHistory(FirebaseData &fbdo,
-                 float avgSpeedMS,
-                 float maxSpeedMS,
+                 float totalWindwegKm,
+                 float avgWindwegKm,
+                 float maxWindwegKm,
+                 int   totalPulse,
                  int   sampleCount,
                  const SensorSettings &settings,
                  FirebaseConfig &config) {
@@ -295,17 +378,19 @@ void sendHistory(FirebaseData &fbdo,
   String path = _basePath() + "/history";
 
   FirebaseJson json;
-  json.set("avg_ms",       avgSpeedMS);
-  json.set("avg_kmh",      avgSpeedMS * 3.6f);
-  json.set("max_ms",       maxSpeedMS);
-  json.set("sample_count", sampleCount);
-  json.set("k_faktor",     settings.kFaktor);
-  json.set("interval_ms",  (int)settings.intervalHistory);
-  json.set("timestamp",    (int)time(NULL));
+  json.set("total_windweg_km", totalWindwegKm);
+  json.set("avg_windweg_km",   avgWindwegKm);
+  json.set("max_windweg_km",   maxWindwegKm);
+  json.set("total_pulse",      totalPulse);
+  json.set("sample_count",     sampleCount);
+  json.set("pulses_per_km",    PULSE_PER_KM);
+  json.set("interval_avg_ms",  (int)settings.intervalAverage);
+  json.set("interval_hist_ms", (int)settings.intervalHistory);
+  json.set("timestamp",        (int)time(NULL));
 
   if (Firebase.RTDB.pushJSON(&fbdo, path, &json)) {
-    Serial.printf("[Firebase] History OK — avg=%.4f max=%.4f dari %d sample\n",
-                  avgSpeedMS, maxSpeedMS, sampleCount);
+    Serial.printf("[Firebase] History OK — total=%.4f km | avg=%.4f km | max=%.4f km | sample=%d\n",
+                  totalWindwegKm, avgWindwegKm, maxWindwegKm, sampleCount);
   } else {
     String reason = fbdo.errorReason();
     Serial.printf("[Firebase] History GAGAL — %s\n", reason.c_str());
@@ -318,13 +403,14 @@ void sendHistory(FirebaseData &fbdo,
     }
   }
 }
-  // ══════════════════════════════════════════════════════════════
-//  checkRemoteCommand — cek perintah dari Firebase (Flutter app)
+  
+// ════════════════════════════════════════════════════════════════
+//  checkRemoteCommand — cek perintah restart dari Firebase
 //
 //  Path: /anemometer/{DEVICE_ID}/command/restart
 //    true  → ESP restart, lalu node di-reset ke false
 //    false → tidak ada aksi
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
 void checkRemoteCommand(FirebaseData &fbdo) {
   String path = _basePath() + "/command/restart";
 

@@ -11,24 +11,33 @@ FirebaseData   fbdo;
 FirebaseAuth   fbAuth;
 FirebaseConfig fbConfig;
 
-// ── Settings dari Firebase (k_faktor, interval) ───────────────
+// ── Settings dari Firebase ───────────────
 SensorSettings gSettings;
 unsigned long  lastSettingsSync   = 0;
-const unsigned long SETTINGS_SYNC = 300000UL; // sync ulang tiap 5 menit
+const unsigned long SETTINGS_SYNC = 300000UL;
 
-volatile int  pulseCount  = 0;
+volatile int pulseRealtime = 0;
+volatile int pulseAvg      = 0;
+volatile int pulseHistory  = 0;
+time_t        lastHistoryEpoch = 0;
 
 void IRAM_ATTR hitungPulsa() {
-  pulseCount++;
+  pulseRealtime++;
+  pulseAvg++;
+  pulseHistory++;
 }
 
+// ── Timer untuk tiap interval ─────────────────────────────────
 unsigned long lastRealtime = 0;
-int lastSentHour = -1;
+unsigned long lastAvg      = 0;
+unsigned long lastHistory  = 0;
 
-float totalSpeed   = 0;
-float maxSpeed     = 0.0f;
-int   jumlahSample = 0;
-
+// ── Akumulator history ────────────────────────────────────────
+// Diisi oleh avg interval, direset saat history terkirim.
+// Menyimpan informasi untuk field avg & max di /history.
+float totalAvgWindweg = 0.0f; // total windweg dari semua avg-interval
+float maxAvgWindweg   = 0.0f; // nilai avg-interval tertinggi
+int   avgSampleCount  = 0;    // berapa kali avg-interval telah terjadi
 
 void setup() {
   Serial.begin(115200);
@@ -45,15 +54,12 @@ void setup() {
 
   if (wifiIsConnected()) {
     setupFirebase(fbdo, fbAuth, fbConfig);
-
-    // Baca settings awal dari Firebase
     gSettings = fetchSettings(fbdo);
 
-    // Log boot ke Firebase
     String bootMsg = "Boot OK | FW=" + String(FIRMWARE_VERSION)
-                   + " | k=" + String(gSettings.kFaktor, 2)
                    + " | RT=" + String(gSettings.intervalRealtime / 1000) + "s"
-                   + " | H=" + String(gSettings.intervalHistory / 60000) + "m";
+                   + " | AVG=" + String(gSettings.intervalAverage / 1000) + "s"
+                   + " | HIST=" + String(gSettings.intervalHistory / 60000) + "m";
     sendLog(fbdo, bootMsg);
 
     checkAndUpdateOTA(fbdo); 
@@ -63,7 +69,11 @@ void setup() {
   }
 
   attachInterrupt(digitalPinToInterrupt(PIN_HALL), hitungPulsa, FALLING);
+  lastRealtime = lastAvg = lastHistory = millis();
+
   Serial.println("[Main] Setup selesai. Sistem aktif.\n");
+  Serial.printf( "[Main] PULSE_PER_KM = %d (%.4f km/pulsa)\n\n",
+                 PULSE_PER_KM, 1.0f / PULSE_PER_KM);
 }
 
 void loop() {
@@ -84,76 +94,125 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     return;
   }
 
-
+  // ── OTA check ─────────────────────────────────────────────────
   if (wifiIsConnected() && millis() - lastOtaCheck >= OTA_CHECK_INTERVAL) {
     lastOtaCheck = millis();
     checkAndUpdateOTA(fbdo);
   }
 
-  // lalu di dalam loop(), setelah blok OTA check:
+  // ── Remote command check ──────────────────────────────────────
   if (wifiIsConnected() && millis() - lastCmdCheck >= CMD_CHECK_INTERVAL) {
   lastCmdCheck = millis();
   checkRemoteCommand(fbdo);
   }
 
   // ── Sync settings dari Firebase tiap 5 menit ───────────────
-  // (k_faktor, interval realtime, interval history)
   if (wifiIsConnected() && millis() - lastSettingsSync >= SETTINGS_SYNC) {
     lastSettingsSync = millis();
     gSettings = fetchSettings(fbdo);
   }
 
+  // Tidak ada yang dikirim kalau WiFi putus —
+  // pulsa tetap akumulasi di ketiga counter.
   if (!wifiIsConnected()) return;
 
-  // ── REALTIME ─────────────────────────────────────────────────
-  // ── REALTIME — kirim speed rata-rata per interval ───────────
-  if (millis() - lastRealtime >= gSettings.intervalRealtime) {
-    // Ambil pulsa secara atomic
+  // Snapshot waktu sekali per iterasi loop untuk konsistensi
+  unsigned long now = millis();
+
+  // ════════════════════════════════════════════════════════════
+  //  REALTIME
+  //  Windweg interval ini = pulseRealtime / PULSE_PER_KM
+  //  Counter direset setelah setiap interval.
+  //  Dikirim ke /realtime (updateNode → selalu ditimpa).
+  // ════════════════════════════════════════════════════════════
+  if (now - lastRealtime >= gSettings.intervalRealtime) {
+    lastRealtime = now;
+
     noInterrupts();
-    int pulsa  = pulseCount;
-    pulseCount = 0;
+    int p = pulseRealtime;
+    pulseRealtime = 0;
     interrupts();
 
-    lastRealtime = millis();
+    float windwegKm = (float)p / PULSE_PER_KM;
 
-    float intervalDetik = gSettings.intervalRealtime / 1000.0f;
-    float rps = pulsa / (intervalDetik * (float)gSettings.magnetCount);
-    float speedMS = 2.0f * PI * gSettings.radiusM * rps * gSettings.kFaktor;
+    Serial.printf("[Realtime] Pulsa: %d | Windweg: %.4f km | Interval: %lu ms\n",
+                  p, windwegKm, gSettings.intervalRealtime);
 
-    Serial.printf("[Main] Pulsa: %d | RPS: %.3f | Speed: %.4f m/s (k=%.1f)\n",
-                  pulsa, rps, speedMS, gSettings.kFaktor);
-
-    // Kirim ke Firebase
-    sendRealtime(fbdo, speedMS, pulsa, gSettings, fbConfig);
-
-    // Akumulator untuk history
-    totalSpeed += speedMS;
-    if (speedMS > maxSpeed) maxSpeed = speedMS;
-    jumlahSample++;
+    sendRealtime(fbdo, windwegKm, p, gSettings, fbConfig);
   }
 
-  // ── HISTORY — push rata-rata tepat saat jam berganti ────────
-  // configTime(7*3600) → localtime() sudah WIB, jadi 07:00/08:00/dst
-  {
-  time_t    nowT = time(NULL);
-  if (nowT >= 100000) {
-  struct tm* tNow = localtime(&nowT);
+  // ════════════════════════════════════════════════════════════
+  //  AVERAGE  (default: setiap 1 menit)
+  //  Windweg interval ini = pulseAvg / PULSE_PER_KM
+  //  Counter direset setelah setiap interval.
+  //
+  //  Nilai ini juga diakumulasi ke totalAvgWindweg & maxAvgWindweg
+  //  untuk dipakai saat history terkirim.
+  //
+  //  Dikirim ke /average (updateNode → selalu ditimpa).
+  //  sample_number menunjukkan urutan sample sejak history terakhir.
+  // ════════════════════════════════════════════════════════════
+  if (now - lastAvg >= gSettings.intervalAverage) {
+    lastAvg = now;
 
-  if (tNow->tm_hour != lastSentHour && lastSentHour != -1) {
-    // Jam baru → kirim akumulasi jam sebelumnya
-    if (jumlahSample > 0) {
-      float avgSpeed = totalSpeed / jumlahSample;
-      Serial.printf("[Main] History jam %02d:00 — avg=%.4f max=%.4f dari %d sample\n",
-                    lastSentHour, avgSpeed, maxSpeed, jumlahSample);
-      sendHistory(fbdo, avgSpeed, maxSpeed, jumlahSample, gSettings, fbConfig);
-      totalSpeed   = 0.0f;
-      maxSpeed     = 0.0f;
-      jumlahSample = 0;
-        } else {
-      Serial.printf("[Main] History jam %02d:00 skip — tidak ada sample.\n", lastSentHour);
-        }
-      }
-  lastSentHour = tNow->tm_hour; // update selalu
+    noInterrupts();
+    int p    = pulseAvg;
+    pulseAvg = 0;
+    interrupts();
+
+    float windwegKm = (float)p / PULSE_PER_KM;
+
+    // Akumulasi untuk history
+    totalAvgWindweg += windwegKm;
+    avgSampleCount++;
+    if (windwegKm > maxAvgWindweg) maxAvgWindweg = windwegKm;
+
+    Serial.printf("[Avg] Pulsa: %d | Windweg: %.4f km | Sample: %d\n",
+                  p, windwegKm, avgSampleCount);
+
+    sendAverage(fbdo, windwegKm, p, avgSampleCount, gSettings, fbConfig);
   }
-  }
+
+// ════════════════════════════════════════════════════════════════
+//  HISTORY  (default: setiap 1 jam, berbasis waktu kalender)
+//  Trigger saat epoch sekarang sudah melewati kelipatan interval
+//  dihitung dari epoch 0 — sehingga selalu snap ke grid kalender.
+//
+//  Contoh intervalHistory = 3600000 ms (1 jam):
+//    trigger di 00:00, 01:00, 02:00, dst — bukan relatif ke boot
+//  Contoh intervalHistory = 1800000 ms (30 menit):
+//    trigger di 00:00, 00:30, 01:00, dst
+// ════════════════════════════════════════════════════════════════
+  time_t epochNow = time(NULL);
+  unsigned long intervalHistorySec = gSettings.intervalHistory / 1000UL;
+
+  // Slot kalender saat ini (misal: epoch dibagi 3600 → slot jam ke-N)
+  time_t currentSlot = (epochNow / intervalHistorySec) * intervalHistorySec;
+
+  if (currentSlot > lastHistoryEpoch) {
+    lastHistoryEpoch = currentSlot;
+
+    noInterrupts();
+    int pH       = pulseHistory;
+    pulseHistory = 0;
+    interrupts();
+
+    float totalKm = (float)pH / PULSE_PER_KM;
+    float avgKm   = (avgSampleCount > 0)
+                      ? totalAvgWindweg / avgSampleCount
+                      : 0.0f;
+
+    Serial.printf("[History] Total: %.4f km | Avg/avg-interval: %.4f km | "
+                  "Max: %.4f km | Pulsa: %d | Sample: %d\n",
+                  totalKm, avgKm, maxAvgWindweg, pH, avgSampleCount);
+
+    sendHistory(fbdo, totalKm, avgKm, maxAvgWindweg,
+                pH, avgSampleCount, gSettings, fbConfig);
+
+    // Reset akumulator history untuk periode berikutnya
+    totalAvgWindweg = 0.0f;
+    maxAvgWindweg   = 0.0f;
+    avgSampleCount  = 0;
+  }  
+
 }
