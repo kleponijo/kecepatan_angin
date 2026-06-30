@@ -148,7 +148,7 @@ static void _tryReinitFirebase(FirebaseConfig &config) {
 //  Path Firebase (set dari Flutter app):
 //    /anemometer/settings/interval_realtime_ms  (int, min 1000 ms)
 //    /anemometer/settings/interval_average_ms   (int, min 10000 ms)
-//    /anemometer/settings/interval_history_ms   (int, min 60000 ms)
+//    /anemometer/settings/interval_history_ms   (int, min 30000 ms)
 //    /anemometer/settings/magnet_count          (int, 1–4)
 //
 //  Jika node belum ada atau gagal baca → pakai nilai default
@@ -185,7 +185,7 @@ SensorSettings fetchSettings(FirebaseData &fbdo) {
   // --- interval_history_ms ---
   if (Firebase.RTDB.getInt(&fbdo, "/anemometer/settings/interval_history_ms")) {
     long val = fbdo.intData();
-    if (val >= 60000) {
+    if (val >= 30000) {
       s.intervalHistory = (unsigned long)val;
       Serial.printf("[Settings] interval_history  = %lu ms\n", s.intervalHistory);
     }
