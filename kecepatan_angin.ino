@@ -72,7 +72,7 @@ void setup() {
   lastRealtime = lastAvg = lastHistory = millis();
 
   Serial.println("[Main] Setup selesai. Sistem aktif.\n");
-  Serial.printf( "[Main] PULSE_PER_KM = %d (%.4f km/pulsa)\n\n",
+  Serial.printf( "[Main] PULSE_PER_KM = %.2f (%.5f km/pulsa)\n\n",
                  PULSE_PER_KM, 1.0f / PULSE_PER_KM);
 }
 
@@ -134,11 +134,14 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     interrupts();
 
     float windwegKm = (float)p / PULSE_PER_KM;
+    float speedKmH =
+    windwegKm *
+    (3600000.0f / gSettings.intervalRealtime);
 
-    Serial.printf("[Realtime] Pulsa: %d | Windweg: %.4f km | Interval: %lu ms\n",
-                  p, windwegKm, gSettings.intervalRealtime);
+    Serial.printf("[Realtime] Pulsa: %d | Windweg: %.4f km | Speed:%.2f km/h\n",
+                  p, windwegKm, speedKmH);
 
-    sendRealtime(fbdo, windwegKm, p, gSettings, fbConfig);
+    sendRealtime(fbdo, windwegKm,  speedKmH, p, gSettings, fbConfig);
   }
 
   // ════════════════════════════════════════════════════════════
@@ -161,6 +164,9 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     interrupts();
 
     float windwegKm = (float)p / PULSE_PER_KM;
+    float speedKmH =
+    windwegKm *
+    (3600000.0f / gSettings.intervalAverage);
 
     // Akumulasi untuk history
     totalAvgWindweg += windwegKm;
@@ -170,7 +176,7 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     Serial.printf("[Avg] Pulsa: %d | Windweg: %.4f km | Sample: %d\n",
                   p, windwegKm, avgSampleCount);
 
-    sendAverage(fbdo, windwegKm, p, avgSampleCount, gSettings, fbConfig);
+    sendAverage(fbdo, windwegKm, speedKmH, p, avgSampleCount, gSettings, fbConfig);
   }
 
 // ════════════════════════════════════════════════════════════════
@@ -201,13 +207,13 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     float avgKm   = (avgSampleCount > 0)
                       ? totalAvgWindweg / avgSampleCount
                       : 0.0f;
+    float speedHistory = totalKm * (3600000.0f / gSettings.intervalHistory);
 
-    Serial.printf("[History] Total: %.4f km | Avg/avg-interval: %.4f km | "
+    Serial.printf("[History] Total: %.4f km | | Speed: %.2f km/h | Avg/avg-interval: %.4f km | "
                   "Max: %.4f km | Pulsa: %d | Sample: %d\n",
-                  totalKm, avgKm, maxAvgWindweg, pH, avgSampleCount);
+                  totalKm, speedHistory, avgKm, maxAvgWindweg, pH, avgSampleCount);
 
-    sendHistory(fbdo, totalKm, avgKm, maxAvgWindweg,
-                pH, avgSampleCount, gSettings, fbConfig);
+    sendHistory(fbdo, totalKm, avgKm, maxAvgWindweg,  speedHistory, pH, avgSampleCount, gSettings, fbConfig);
 
     // Reset akumulator history untuk periode berikutnya
     totalAvgWindweg = 0.0f;

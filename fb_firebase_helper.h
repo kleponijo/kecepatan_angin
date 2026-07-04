@@ -12,7 +12,7 @@
 //  │ sendHistory │ /…/history                     │ push      │
 //  └─────────────┴────────────────────────────────┴───────────┘
 //
-//  Kalkulasi: windweg_km = pulseCount / PULSE_PER_KM (= 18)
+//  Kalkulasi: windweg_km = pulseCount / PULSE_PER_KM
 //
 //  Perbaikan v2:
 //  - Tambah intervalAverage ke SensorSettings
@@ -243,7 +243,6 @@ void sendLog(FirebaseData &fbdo, const String &msg) {
 //
 //  Path: /anemometer/{DEVICE_ID}/realtime  (updateNode / overwrite)
 //  Fields:
-//    windweg_km    → jarak angin selama interval ini (pulseCount / 18)
 //    pulse_count   → jumlah pulsa selama interval ini
 //    pulses_per_km → konstanta = 18
 //    interval_ms   → durasi interval realtime
@@ -255,6 +254,7 @@ void sendLog(FirebaseData &fbdo, const String &msg) {
 // ════════════════════════════════════════════════════════════════
 void sendRealtime(FirebaseData &fbdo,
                   float windwegKm,
+                  float speedKmH,
                   int   pulseCount,
                   const SensorSettings &settings,
                   FirebaseConfig &config) {
@@ -264,6 +264,7 @@ void sendRealtime(FirebaseData &fbdo,
 
   FirebaseJson json;
   json.set("windweg_km",    windwegKm);
+  json.set("speed_kmh", speedKmH);
   json.set("pulse_count",   pulseCount);
   json.set("pulses_per_km", PULSE_PER_KM);
   json.set("interval_ms",   (int)settings.intervalRealtime);
@@ -316,6 +317,7 @@ void sendRealtime(FirebaseData &fbdo,
 
 void sendAverage(FirebaseData &fbdo,
                  float windwegKm,
+                 float speedAvg,
                  int   pulseCount,
                  int   sampleNumber,
                  const SensorSettings &settings,
@@ -326,6 +328,7 @@ void sendAverage(FirebaseData &fbdo,
 
   FirebaseJson json;
   json.set("windweg_km",    windwegKm);
+  json.set("speed_kmh", speedAvg);
   json.set("pulse_count",   pulseCount);
   json.set("sample_number", sampleNumber);
   json.set("pulses_per_km", PULSE_PER_KM);
@@ -370,6 +373,7 @@ void sendHistory(FirebaseData &fbdo,
                  float totalWindwegKm,
                  float avgWindwegKm,
                  float maxWindwegKm,
+                 float speedHistory,
                  int   totalPulse,
                  int   sampleCount,
                  const SensorSettings &settings,
@@ -381,6 +385,7 @@ void sendHistory(FirebaseData &fbdo,
   json.set("total_windweg_km", totalWindwegKm);
   json.set("avg_windweg_km",   avgWindwegKm);
   json.set("max_windweg_km",   maxWindwegKm);
+  json.set("speed_kmh", speedHistory);
   json.set("total_pulse",      totalPulse);
   json.set("sample_count",     sampleCount);
   json.set("pulses_per_km",    PULSE_PER_KM);

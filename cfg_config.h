@@ -20,19 +20,13 @@ const char* FB_PASSWORD = "coba123";
 #define PIN_HALL   32
 #define PIN_BUZZER 18
 
-// ─────────────────────────────────────────────────────────────
-//  Kalkulasi Windweg (pulse-based, tanpa k_faktor)
-//
-//  Anemometer memiliki 3 magnet per cup (PULSE_PER_ROTATION = 3)
-//  Satu km di windweg speedo = 6 putaran penuh (ROTATION_PER_KM = 6)
-//  → 1 km = 3 × 6 = 18 pulsa (PULSE_PER_KM)
-//
-//  Rumus:  windweg_km = jumlah_pulsa / PULSE_PER_KM
-//  Contoh: 18 pulsa → 1.0 km | 9 pulsa → 0.5 km | 1 pulsa → 0.0556 km
-// ─────────────────────────────────────────────────────────────
-const int PULSE_PER_ROTATION = 3;
-const int ROTATION_PER_KM = 6;
-const int PULSE_PER_KM       = PULSE_PER_ROTATION * ROTATION_PER_KM; // = 18
+// ================================
+// Hasil kalibrasi lapangan
+// Berdasarkan 98 sampel pengukuran
+// Menggunakan speedometer digital
+// Nilai rata-rata = 16.37 pulsa/km
+// ================================
+const float PULSE_PER_KM = 16.37f;
 
 // --- Interval Default (bisa di-override dari Firebase) ---
 const unsigned long  DEFAULT_INTERVAL_REALTIME = 1000UL;      // 1 detik
@@ -54,7 +48,7 @@ const char*          AP_PASSWORD    = "";                  // kosong = open AP
 const int            WIFI_MAX_RETRY = 40;                  // retry sebelum masuk AP mode
 const unsigned long  WIFI_RETRY_DELAY = 1500;               // jeda antar retry (ms)
 
-const char* FIRMWARE_VERSION   = "v1.0.9";         // ← ganti tiap mau update
+const char* FIRMWARE_VERSION   = "v1.1.0";         // ← ganti tiap mau update
 
 const char* GITHUB_USER        = "kleponijo";   // ← isi username GitHub kamu
 const char* GITHUB_REPO        = "kecepatan_angin";  // ← isi nama repo GitHub kamu
