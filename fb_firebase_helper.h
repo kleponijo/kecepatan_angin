@@ -244,7 +244,6 @@ void sendLog(FirebaseData &fbdo, const String &msg) {
 //  Path: /anemometer/{DEVICE_ID}/realtime  (updateNode / overwrite)
 //  Fields:
 //    pulse_count   → jumlah pulsa selama interval ini
-//    pulses_per_km → konstanta = 18
 //    interval_ms   → durasi interval realtime
 //    timestamp     → unix time WIB
 //
@@ -266,7 +265,7 @@ void sendRealtime(FirebaseData &fbdo,
   json.set("windweg_km",    windwegKm);
   json.set("speed_kmh", speedKmH);
   json.set("pulse_count",   pulseCount);
-  json.set("pulses_per_km", PULSE_PER_KM);
+  json.set("calibration_version","linear_v1");
   json.set("interval_ms",   (int)settings.intervalRealtime);
   json.set("timestamp",     (int)time(NULL));
 
@@ -307,7 +306,6 @@ void sendRealtime(FirebaseData &fbdo,
 //    windweg_km    → jarak angin selama interval rata-rata ini
 //    pulse_count   → jumlah pulsa selama interval rata-rata ini
 //    sample_number → urutan sample sejak history terakhir (1, 2, 3, …)
-//    pulses_per_km → konstanta = 18
 //    interval_ms   → durasi interval rata-rata
 //    timestamp     → unix time WIB
 //
@@ -331,7 +329,7 @@ void sendAverage(FirebaseData &fbdo,
   json.set("speed_kmh", speedAvg);
   json.set("pulse_count",   pulseCount);
   json.set("sample_number", sampleNumber);
-  json.set("pulses_per_km", PULSE_PER_KM);
+  json.set("calibration_version","linear_v1");
   json.set("interval_ms",   (int)settings.intervalAverage);
   json.set("timestamp",     (int)time(NULL));
 
@@ -364,7 +362,6 @@ void sendAverage(FirebaseData &fbdo,
 //    max_windweg_km    → nilai avg-interval tertinggi periode ini
 //    total_pulse       → total pulsa mentah periode ini
 //    sample_count      → berapa kali avg-interval terjadi
-//    pulses_per_km     → konstanta = 18
 //    interval_avg_ms   → durasi interval rata-rata
 //    interval_hist_ms  → durasi interval history
 //    timestamp         → unix time WIB
@@ -388,7 +385,7 @@ void sendHistory(FirebaseData &fbdo,
   json.set("speed_kmh", speedHistory);
   json.set("total_pulse",      totalPulse);
   json.set("sample_count",     sampleCount);
-  json.set("pulses_per_km",    PULSE_PER_KM);
+  json.set("calibration_version","linear_v1");
   json.set("interval_avg_ms",  (int)settings.intervalAverage);
   json.set("interval_hist_ms", (int)settings.intervalHistory);
   json.set("timestamp",        (int)time(NULL));

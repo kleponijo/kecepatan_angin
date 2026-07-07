@@ -133,7 +133,7 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     pulseRealtime = 0;
     interrupts();
 
-    float windwegKm = (float)p / PULSE_PER_KM;
+    float windwegKm = M * (float)p + B;
     float speedKmH =
     windwegKm *
     (3600000.0f / gSettings.intervalRealtime);
@@ -163,7 +163,7 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     pulseAvg = 0;
     interrupts();
 
-    float windwegKm = (float)p / PULSE_PER_KM;
+    float windwegKm = M * (float)p + B;
     float speedKmH =
     windwegKm *
     (3600000.0f / gSettings.intervalAverage);
@@ -203,7 +203,7 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     pulseHistory = 0;
     interrupts();
 
-    float totalKm = (float)pH / PULSE_PER_KM;
+    float totalKm = M * (float)pH + B;
     float avgKm   = (avgSampleCount > 0)
                       ? totalAvgWindweg / avgSampleCount
                       : 0.0f;
