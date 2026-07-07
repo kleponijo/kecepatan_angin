@@ -72,8 +72,8 @@ void setup() {
   lastRealtime = lastAvg = lastHistory = millis();
 
   Serial.println("[Main] Setup selesai. Sistem aktif.\n");
-  Serial.printf( "[Main] PULSE_PER_KM = %.2f (%.5f km/pulsa)\n\n",
-                 PULSE_PER_KM, 1.0f / PULSE_PER_KM);
+  Serial.println("[Main] Setup selesai. Sistem aktif.\n");
+  Serial.printf("[Main] Model Kalibrasi : Windweg = %.7f × Pulsa + %.7f km\n", M, B);
 }
 
 void loop() {
@@ -121,7 +121,6 @@ if (wifiJustReconnected() && wifiIsConnected()) {
 
   // ════════════════════════════════════════════════════════════
   //  REALTIME
-  //  Windweg interval ini = pulseRealtime / PULSE_PER_KM
   //  Counter direset setelah setiap interval.
   //  Dikirim ke /realtime (updateNode → selalu ditimpa).
   // ════════════════════════════════════════════════════════════
@@ -146,7 +145,6 @@ if (wifiJustReconnected() && wifiIsConnected()) {
 
   // ════════════════════════════════════════════════════════════
   //  AVERAGE  (default: setiap 1 menit)
-  //  Windweg interval ini = pulseAvg / PULSE_PER_KM
   //  Counter direset setelah setiap interval.
   //
   //  Nilai ini juga diakumulasi ke totalAvgWindweg & maxAvgWindweg
