@@ -120,7 +120,8 @@ void checkAndUpdateOTA(FirebaseData &fbdo) {
 
   // ── BARIS 88: log SEBELUM flash (setelah flash ESP langsung ──
   // ── restart, jadi log sesudah tidak akan sempat terkirim) ────
-  sendLog(fbdo, "OTA: mulai flash → " + binUrl);
+  Serial.printf("[OTA] Free heap sebelum flash: %u bytes\n", ESP.getFreeHeap());
+  sendLog(fbdo, "OTA: mulai flash (heap=" + String(ESP.getFreeHeap()) + ") → " + binUrl);
   Serial.println("[OTA] Mulai download & flash...");
   Serial.println("[OTA] URL: " + binUrl);
 

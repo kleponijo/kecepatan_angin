@@ -48,7 +48,7 @@ const char*          AP_PASSWORD    = "";                  // kosong = open AP
 const int            WIFI_MAX_RETRY = 40;                  // retry sebelum masuk AP mode
 const unsigned long  WIFI_RETRY_DELAY = 1500;               // jeda antar retry (ms)
 
-const char* FIRMWARE_VERSION   = "v1.1.1";         // ← ganti tiap mau update
+const char* FIRMWARE_VERSION   = "v1.1.2";         // ← ganti tiap mau update
 
 const char* GITHUB_USER        = "kleponijo";   // ← isi username GitHub kamu
 const char* GITHUB_REPO        = "kecepatan_angin";  // ← isi nama repo GitHub kamu

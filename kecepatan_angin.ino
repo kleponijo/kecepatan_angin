@@ -62,6 +62,7 @@ void setup() {
                    + " | HIST=" + String(gSettings.intervalHistory / 60000) + "m";
     sendLog(fbdo, bootMsg);
 
+    delay(3000);
     checkAndUpdateOTA(fbdo); 
   } else {
     Serial.println("[Main] Mode AP aktif — Firebase dilewati.");
@@ -87,6 +88,7 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     Serial.println("[Main] WiFi reconnect dari AP mode → reinit Firebase...");
     setupFirebase(fbdo, fbAuth, fbConfig);
     gSettings = fetchSettings(fbdo);
+    delay(3000);
     checkAndUpdateOTA(fbdo);
     lastOtaCheck     = millis();
     lastSettingsSync = millis();
@@ -132,10 +134,13 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     pulseRealtime = 0;
     interrupts();
 
-    float windwegKm = M * (float)p + B;
-    float speedKmH =
-    windwegKm *
-    (3600000.0f / gSettings.intervalRealtime);
+    float windwegKm = 0.0f;
+    float speedKmH = 0.0f;
+    
+    if(p > 0) {
+      windwegKm = M * (float)p + B;
+      speedKmH = windwegKm * (3600000.0f / gSettings.intervalRealtime);
+    }
 
     Serial.printf("[Realtime] Pulsa: %d | Windweg: %.4f km | Speed:%.2f km/h\n",
                   p, windwegKm, speedKmH);
@@ -161,10 +166,13 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     pulseAvg = 0;
     interrupts();
 
-    float windwegKm = M * (float)p + B;
-    float speedKmH =
-    windwegKm *
-    (3600000.0f / gSettings.intervalAverage);
+    float windwegKm = 0.0f;
+    float speedKmH = 0.0f;
+
+    if(p > 0) {
+      windwegKm = M * (float)p + B;
+      speedKmH = windwegKm * (3600000.0f / gSettings.intervalAverage);
+    }
 
     // Akumulasi untuk history
     totalAvgWindweg += windwegKm;
@@ -201,11 +209,16 @@ if (wifiJustReconnected() && wifiIsConnected()) {
     pulseHistory = 0;
     interrupts();
 
-    float totalKm = M * (float)pH + B;
+    float totalKm = 0.0f;
     float avgKm   = (avgSampleCount > 0)
                       ? totalAvgWindweg / avgSampleCount
                       : 0.0f;
-    float speedHistory = totalKm * (3600000.0f / gSettings.intervalHistory);
+    float speedHistory = 0.0f;
+
+    if(pH > 0) {
+      totalKm = M * (float)pH + B;
+      speedHistory = totalKm * (3600000.0f / gSettings.intervalHistory);
+    }
 
     Serial.printf("[History] Total: %.4f km | | Speed: %.2f km/h | Avg/avg-interval: %.4f km | "
                   "Max: %.4f km | Pulsa: %d | Sample: %d\n",
